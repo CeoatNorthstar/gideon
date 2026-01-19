@@ -1,0 +1,30 @@
+# Ignore releases folder
+releases/
+releases/**
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE/editor stuff
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# PyTorch model checkpoints (if you don't want to commit them)
+*.pt
+*.pth
