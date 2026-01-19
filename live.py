@@ -3,19 +3,17 @@ PROFESSIONAL FINGER COUNTING SYSTEM WITH MNIST RECOGNITION
 ===========================================================
 
 Advanced hand tracking system that:
-1. Detects hand using computer vision
-2. Counts extended fingers using convexity defects analysis
+1. Detects hand using MediaPipe (robust, no skin color dependency)
+2. Counts extended fingers using MediaPipe landmarks
 3. Renders the count as an MNIST-style digit image
 4. Passes rendered digit to trained MNIST CNN for verification
 5. Displays results with professional UI
 
-Uses OpenCV for hand detection (no MediaPipe dependency issues)
-
 Requirements:
-    pip install torch torchvision opencv-python numpy
+    pip install torch torchvision opencv-python numpy mediapipe
 
 Author: Professional AI Assistant
-Version: 2.0
+Version: 2.1 (MediaPipe Edition)
 Date: 2026
 """
 
@@ -29,6 +27,14 @@ import cv2
 from collections import deque
 from typing import Optional, Tuple, List
 import math
+
+# MediaPipe imports for new API (v0.10+)
+# MediaPipe imports
+try:
+    import mediapipe as mp
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    MEDIAPIPE_AVAILABLE = False
 
 
 # ============================================================================
@@ -64,11 +70,9 @@ class Config:
     FPS_WINDOW_SIZE = 30
     SMOOTHING_WINDOW = 7
     
-    # Hand Detection
-    SKIN_LOWER_HSV = np.array([0, 20, 70], dtype=np.uint8)
-    SKIN_UPPER_HSV = np.array([20, 255, 255], dtype=np.uint8)
-    MIN_HAND_AREA = 10000
-    DEFECT_DEPTH_THRESHOLD = 10000
+    # MediaPipe Hand Detection
+    MIN_DETECTION_CONFIDENCE = 0.5
+    MIN_TRACKING_CONFIDENCE = 0.5
 
 
 # ============================================================================
@@ -104,181 +108,120 @@ class MNIST_CNN(nn.Module):
 
 
 # ============================================================================
-# HAND TRACKING AND FINGER COUNTING
+# HAND TRACKING AND FINGER COUNTING (MEDIAPIPE)
 # ============================================================================
 
 class HandTracker:
     """
-    Advanced hand tracking with finger counting using convexity defects.
+    Advanced hand tracking with finger counting using MediaPipe.
     
-    Uses OpenCV's convex hull and convexity defects to detect fingers.
-    This is a robust, mathematical approach that doesn't require MediaPipe.
+    Uses MediaPipe Hands for robust hand detection without skin color dependency.
+    Works with any background and lighting conditions.
     """
     
     def __init__(self):
-        """Initialize hand tracker."""
+        """Initialize MediaPipe hand tracker."""
         self.finger_count_history = deque(maxlen=Config.SMOOTHING_WINDOW)
-        self.kernel = np.ones((5, 5), np.uint8)
         
-    def detect_hand(self, frame: np.ndarray) -> Tuple[List[np.ndarray], Optional[np.ndarray]]:
+        # Standard stable import for MediaPipe 0.10.x
+        import mediapipe as mp
+        
+        self.mp_hands = mp.solutions.hands
+        self.mp_drawing = mp.solutions.drawing_utils
+        self.mp_drawing_styles = mp.solutions.drawing_styles
+        
+        self.hands = self.mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=2,
+            min_detection_confidence=Config.MIN_DETECTION_CONFIDENCE,
+            min_tracking_confidence=Config.MIN_TRACKING_CONFIDENCE
+        )
+        
+        self.FINGER_TIPS = [4, 8, 12, 16, 20]
+        self.FINGER_PIPS = [2, 6, 10, 14, 18]  # Finger base joints (for comparison)
+        
+    def detect_hand(self, frame: np.ndarray) -> Tuple[List, Optional[np.ndarray]]:
         """
-        Detect hand(s) using skin color segmentation with face filtering.
+        Detect hand(s) using MediaPipe.
         
         Args:
             frame: BGR image from camera
             
         Returns:
-            (hand_contours, hand_mask): List of hand contours and binary mask
+            (hand_landmarks_list, visualization_frame): List of detected hands and visualization
         """
-        h, w = frame.shape[:2]
+        # Convert BGR to RGB for MediaPipe
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        # Define region of interest (ROI) - exclude top portion where face usually is
-        # Only look at bottom 75% of frame to avoid face detection
-        roi_y_start = int(h * 0.25)
-        roi_frame = frame[roi_y_start:h, 0:w]
+        # Process frame with MediaPipe
+        results = self.hands.process(rgb_frame)
         
-        # Convert to HSV for better skin detection
-        hsv = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2HSV)
+        # Create visualization frame
+        vis_frame = frame.copy()
         
-        # Create skin mask
-        mask = cv2.inRange(hsv, Config.SKIN_LOWER_HSV, Config.SKIN_UPPER_HSV)
+        hand_landmarks_list = []
         
-        # Morphological operations to clean up
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self.kernel, iterations=2)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.kernel, iterations=2)
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                hand_landmarks_list.append(hand_landmarks)
+                
+                # Draw hand landmarks on visualization
+                self.mp_drawing.draw_landmarks(
+                    vis_frame,
+                    hand_landmarks,
+                    self.mp_hands.HAND_CONNECTIONS,
+                    self.mp_drawing_styles.get_default_hand_landmarks_style(),
+                    self.mp_drawing_styles.get_default_hand_connections_style()
+                )
         
-        # Dilate to fill gaps
-        mask = cv2.dilate(mask, self.kernel, iterations=1)
-        
-        # Find contours
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        if len(contours) == 0:
-            # Create full-size mask for display
-            full_mask = np.zeros((h, w), dtype=np.uint8)
-            full_mask[roi_y_start:h, 0:w] = mask
-            return [], full_mask
-        
-        # Filter contours by area and aspect ratio (hands vs face)
-        valid_contours = []
-        
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            
-            # Check minimum area
-            if area < Config.MIN_HAND_AREA:
-                continue
-            
-            # Get bounding rectangle
-            x, y, cont_w, cont_h = cv2.boundingRect(contour)
-            aspect_ratio = cont_w / float(cont_h) if cont_h > 0 else 0
-            
-            # Filter out face-like regions:
-            # - Faces are usually more circular/square (aspect ratio ~1)
-            # - Hands are more elongated (aspect ratio further from 1)
-            # - Faces are usually larger
-            if area > 80000:  # Very large region, likely face
-                continue
-            
-            # Check if contour is in upper portion of ROI (still too close to face area)
-            contour_center_y = y + cont_h // 2
-            if contour_center_y < roi_frame.shape[0] * 0.2:  # Top 20% of ROI
-                continue
-            
-            # Adjust contour coordinates to full frame
-            adjusted_contour = contour.copy()
-            adjusted_contour[:, 0, 1] += roi_y_start
-            
-            valid_contours.append(adjusted_contour)
-        
-        # Sort by area and take top 2 (for two hands)
-        valid_contours = sorted(valid_contours, key=cv2.contourArea, reverse=True)[:2]
-        
-        # Create full-size mask for display
-        full_mask = np.zeros((h, w), dtype=np.uint8)
-        full_mask[roi_y_start:h, 0:w] = mask
-        
-        return valid_contours, full_mask
+        return hand_landmarks_list, vis_frame
     
-    def count_fingers_from_contour(self, contour: np.ndarray, frame: np.ndarray) -> Tuple[int, List]:
+    def count_fingers_from_landmarks(self, hand_landmarks, frame_shape: Tuple[int, int]) -> int:
         """
-        Count fingers using convexity defects analysis.
-        
-        Mathematical approach:
-        1. Find convex hull of hand contour
-        2. Calculate convexity defects (gaps between hull and contour)
-        3. Deep defects indicate gaps between fingers
-        4. Count valid defects = count fingers - 1
+        Count extended fingers using MediaPipe landmarks.
         
         Args:
-            contour: Hand contour
-            frame: Frame for visualization
+            hand_landmarks: MediaPipe hand landmarks
+            frame_shape: (height, width) of frame
             
         Returns:
-            (finger_count, defect_points): Number of fingers and defect visualization points
+            finger_count: Number of extended fingers (0-5)
         """
-        # Ensure contour is proper numpy array
-        if not isinstance(contour, np.ndarray):
-            return 0, []
-        
-        # Reshape if needed
-        if len(contour.shape) == 2:
-            contour = contour.reshape(-1, 1, 2)
-        
-        # Ensure correct dtype
-        contour = contour.astype(np.int32)
-        
-        # Find convex hull
-        try:
-            hull = cv2.convexHull(contour, returnPoints=False)
-        except Exception as e:
-            print(f"Hull error: {e}")
-            return 0, []
-        
-        if len(hull) < 3:
-            return 0, []
-        
-        # Find convexity defects
-        try:
-            defects = cv2.convexityDefects(contour, hull)
-        except Exception as e:
-            print(f"Defects error: {e}")
-            return 0, []
-        
-        if defects is None:
-            return 0, []
-        
-        # Analyze defects
+        h, w = frame_shape
         finger_count = 0
-        defect_points = []
         
-        for i in range(defects.shape[0]):
-            s, e, f, d = defects[i, 0]
-            start = tuple(contour[s][0])
-            end = tuple(contour[e][0])
-            far = tuple(contour[f][0])
+        # Get all landmark coordinates
+        landmarks = []
+        for lm in hand_landmarks.landmark:
+            landmarks.append((int(lm.x * w), int(lm.y * h)))
+        
+        # Check thumb (different logic - compare x-coordinate)
+        # Thumb is extended if tip is further from wrist than base
+        thumb_tip = landmarks[self.FINGER_TIPS[0]]
+        thumb_base = landmarks[self.FINGER_PIPS[0]]
+        wrist = landmarks[0]
+        
+        # Calculate if thumb is extended (based on hand orientation)
+        thumb_tip_dist = abs(thumb_tip[0] - wrist[0])
+        thumb_base_dist = abs(thumb_base[0] - wrist[0])
+        
+        if thumb_tip_dist > thumb_base_dist:
+            finger_count += 1
+        
+        # Check other four fingers (compare y-coordinate)
+        # Finger is extended if tip is above the PIP joint
+        for i in range(1, 5):
+            tip_idx = self.FINGER_TIPS[i]
+            pip_idx = self.FINGER_PIPS[i]
             
-            # Calculate distances
-            a = math.sqrt((end[0] - start[0])**2 + (end[1] - start[1])**2)
-            b = math.sqrt((far[0] - start[0])**2 + (far[1] - start[1])**2)
-            c = math.sqrt((end[0] - far[0])**2 + (end[1] - far[1])**2)
+            tip_y = landmarks[tip_idx][1]
+            pip_y = landmarks[pip_idx][1]
             
-            # Calculate angle at far point using cosine rule
-            angle = math.acos((b**2 + c**2 - a**2) / (2 * b * c + 0.0001))
-            angle_deg = math.degrees(angle)
-            
-            # Filter defects:
-            # - Depth must be significant (deep gap between fingers)
-            # - Angle must be less than 90 degrees (acute angle)
-            if d > Config.DEFECT_DEPTH_THRESHOLD and angle_deg < 90:
+            # Finger is extended if tip is higher (lower y value) than base
+            if tip_y < pip_y:
                 finger_count += 1
-                defect_points.append((start, end, far))
         
-        # Fingers = defects + 1 (because N fingers have N-1 gaps)
-        # Clamp between 0-5 for one hand
-        finger_count = min(finger_count + 1, 5)
-        
-        return finger_count, defect_points
+        return finger_count
     
     def get_smoothed_count(self, current_count: int) -> int:
         """
@@ -299,30 +242,34 @@ class HandTracker:
         counts = list(self.finger_count_history)
         return max(set(counts), key=counts.count)
     
-    def draw_hand_contour(self, frame: np.ndarray, contours: List[np.ndarray], all_defect_points: List[List]):
+    def draw_hand_visualization(self, frame: np.ndarray, hand_landmarks_list: List, finger_counts: List[int]):
         """
-        Draw hand contour(s) and convexity defects.
+        Draw hand landmarks and finger count.
         
         Args:
             frame: Image to draw on
-            contours: List of hand contours
-            all_defect_points: List of defect points for each hand
+            hand_landmarks_list: List of hand landmarks
+            finger_counts: List of finger counts for each hand
         """
-        for idx, contour in enumerate(contours):
-            # Draw contour
-            cv2.drawContours(frame, [contour], 0, Config.COLOR_PRIMARY, 2)
-            
-            # Draw convex hull
-            hull = cv2.convexHull(contour)
-            cv2.drawContours(frame, [hull], 0, Config.COLOR_SECONDARY, 2)
-            
-            # Draw defect points (gaps between fingers)
-            if idx < len(all_defect_points):
-                defect_points = all_defect_points[idx]
-                for start, end, far in defect_points:
-                    cv2.circle(frame, far, 8, Config.COLOR_DEFECTS, -1)
-                    cv2.line(frame, start, far, Config.COLOR_DEFECTS, 2)
-                    cv2.line(frame, end, far, Config.COLOR_DEFECTS, 2)
+        # MediaPipe already draws landmarks in detect_hand()
+        # Here we can add additional visualizations if needed
+        
+        for idx, hand_landmarks in enumerate(hand_landmarks_list):
+            if idx < len(finger_counts):
+                # Get wrist position for text
+                h, w = frame.shape[:2]
+                wrist = hand_landmarks.landmark[0]
+                wrist_x = int(wrist.x * w)
+                wrist_y = int(wrist.y * h)
+                
+                # Draw finger count near wrist
+                cv2.putText(frame, f"{finger_counts[idx]}", 
+                           (wrist_x - 20, wrist_y + 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, Config.COLOR_ACCENT, 3)
+    
+    def cleanup(self):
+        """Cleanup MediaPipe resources."""
+        self.hands.close()
 
 
 # ============================================================================
@@ -511,8 +458,8 @@ class UIManager:
         frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
         
         # Title
-        cv2.putText(frame, "FINGER RECOGNITION SYSTEM", (20, 40),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.2, Config.COLOR_PRIMARY, 3)
+        cv2.putText(frame, " Gideon FINGER RECOGNITION SYSTEM", (20, 40),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.0, Config.COLOR_PRIMARY, 3)
         
         # FPS
         cv2.putText(frame, f"FPS: {fps:.1f}", (20, 75),
@@ -530,7 +477,7 @@ class UIManager:
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
         
         # Bottom instructions
-        instructions = "Controls: Q=Quit | H=Toggle Hand | D=Toggle Detection | S=Adjust Skin"
+        instructions = "Controls: Q=Quit | H=Toggle Hand | D=Toggle Detection"
         cv2.putText(frame, instructions, (20, h - 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, Config.COLOR_TEXT, 1)
         
@@ -634,7 +581,6 @@ class FingerRecognitionApp:
         """
         print("\n" + "="*70)
         print("PROFESSIONAL FINGER RECOGNITION SYSTEM")
-        print("Using OpenCV Convexity Defects Method")
         print("="*70)
         
         # Initialize components
@@ -659,13 +605,14 @@ class FingerRecognitionApp:
         
         print(f"✓ Camera initialized: {Config.CAM_WIDTH}x{Config.CAM_HEIGHT}@{Config.CAM_FPS}fps")
         print(f"✓ Device: {Config.DEVICE}")
+        print(f"✓ MediaPipe Hands initialized")
         print(f"✓ All systems ready\n")
     
     def run(self):
         """Main application loop."""
         print("Starting recognition system...")
         print("Show your hand to the camera!")
-        print("NOTE: Works best with good lighting and clear background\n")
+        print("NOTE: Works with any background - no skin color dependency!\n")
         
         while self.running:
             ret, frame = self.cap.read()
@@ -678,42 +625,41 @@ class FingerRecognitionApp:
             # Mirror for natural interaction
             frame = cv2.flip(frame, 1)
             
-            # Draw ROI line to show detection area (below this line only)
-            h, w = frame.shape[:2]
-            roi_line_y = int(h * 0.25)
-            cv2.line(frame, (0, roi_line_y), (w, roi_line_y), (0, 255, 255), 2)
-            cv2.putText(frame, "HAND DETECTION ZONE (Show hands below this line)", 
-                       (20, roi_line_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-            
-            # Detect hand(s)
-            hand_contours, hand_mask = self.hand_tracker.detect_hand(frame)
+            # Detect hand(s) using MediaPipe
+            hand_landmarks_list, vis_frame = self.hand_tracker.detect_hand(frame)
             
             total_finger_count = 0
             prediction = None
             confidence = 0.0
             rendered_digit = None
-            all_defect_points = []
+            finger_counts = []
             
-            if len(hand_contours) > 0:
+            if hand_landmarks_list:
                 # Count fingers for each hand
-                for hand_contour in hand_contours:
-                    finger_count, defect_points = self.hand_tracker.count_fingers_from_contour(
-                        hand_contour, frame
+                h, w = frame.shape[:2]
+                for hand_landmarks in hand_landmarks_list:
+                    finger_count = self.hand_tracker.count_fingers_from_landmarks(
+                        hand_landmarks, (h, w)
                     )
+                    finger_counts.append(finger_count)
                     total_finger_count += finger_count
-                    all_defect_points.append(defect_points)
                 
                 # Smooth the total count
                 total_finger_count = self.hand_tracker.get_smoothed_count(total_finger_count)
                 
                 # Draw hand visualization
                 if self.show_hand:
-                    self.hand_tracker.draw_hand_contour(frame, hand_contours, all_defect_points)
+                    self.hand_tracker.draw_hand_visualization(vis_frame, hand_landmarks_list, finger_counts)
+                    frame = vis_frame
                 
                 # Process through recognition system
                 if total_finger_count > 0:
                     prediction, confidence, rendered_digit = \
                         self.recognition_system.process_finger_count(total_finger_count)
+            else:
+                # No hands detected
+                if self.show_hand:
+                    frame = vis_frame
             
             # Draw UI
             frame = self.ui_manager.draw_info_panel(
@@ -726,11 +672,8 @@ class FingerRecognitionApp:
                     frame, rendered_digit, prediction, confidence, total_finger_count
                 )
             
-            # Display windows
-            cv2.imshow("Finger Recognition System", frame)
-            
-            if hand_mask is not None:
-                cv2.imshow("Hand Mask (Skin Detection)", hand_mask)
+            # Display window
+            cv2.imshow("Gideon Finger Recognition System", frame)
             
             # Handle input
             self.handle_keyboard()
@@ -753,6 +696,7 @@ class FingerRecognitionApp:
     
     def cleanup(self):
         """Cleanup resources."""
+        self.hand_tracker.cleanup()
         self.cap.release()
         cv2.destroyAllWindows()
         print("\n✓ Application terminated successfully")
@@ -769,17 +713,17 @@ def main():
         app.run()
         
     except FileNotFoundError as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n✗ Error: {e}")
         print("Please ensure mnist_cnn.pt is in the same directory.")
         
     except RuntimeError as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n✗ Error: {e}")
         
     except KeyboardInterrupt:
         print("\n\n✓ Interrupted by user")
         
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\n✗ Unexpected error: {e}")
         import traceback
         traceback.print_exc()
 
