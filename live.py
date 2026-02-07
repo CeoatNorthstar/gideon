@@ -28,10 +28,12 @@ from collections import deque
 from typing import Optional, Tuple, List
 import math
 
-# MediaPipe imports for new API (v0.10+)
-# MediaPipe imports
+# MediaPipe Tasks API imports (v0.10.18+)
 try:
     import mediapipe as mp
+    from mediapipe.tasks import python as mp_python
+    from mediapipe.tasks.python import vision as mp_vision
+    from mediapipe import solutions as mp_solutions
     MEDIAPIPE_AVAILABLE = True
 except ImportError:
     MEDIAPIPE_AVAILABLE = False
@@ -113,36 +115,51 @@ class MNIST_CNN(nn.Module):
 
 class HandTracker:
     """
-    Advanced hand tracking with finger counting using MediaPipe.
+    Advanced hand tracking with finger counting using MediaPipe Tasks API.
     
-    Uses MediaPipe Hands for robust hand detection without skin color dependency.
+    Uses MediaPipe HandLandmarker for robust hand detection without skin color dependency.
     Works with any background and lighting conditions.
     """
     
     def __init__(self):
-        """Initialize MediaPipe hand tracker."""
+        """Initialize MediaPipe hand tracker using Tasks API."""
         self.finger_count_history = deque(maxlen=Config.SMOOTHING_WINDOW)
         
-        # Standard stable import for MediaPipe 0.10.x
-        import mediapipe as mp
+        # Set up HandLandmarker with Tasks API
+        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hand_landmarker.task")
         
-        self.mp_hands = mp.solutions.hands
-        self.mp_drawing = mp.solutions.drawing_utils
-        self.mp_drawing_styles = mp.solutions.drawing_styles
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(
+                f"Hand landmarker model not found at {model_path}. "
+                "Download from: https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+            )
         
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=2,
-            min_detection_confidence=Config.MIN_DETECTION_CONFIDENCE,
+        base_options = mp_python.BaseOptions(model_asset_path=model_path)
+        options = mp_vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=mp_vision.RunningMode.IMAGE,
+            num_hands=2,
+            min_hand_detection_confidence=Config.MIN_DETECTION_CONFIDENCE,
             min_tracking_confidence=Config.MIN_TRACKING_CONFIDENCE
         )
+        self.hand_landmarker = mp_vision.HandLandmarker.create_from_options(options)
         
         self.FINGER_TIPS = [4, 8, 12, 16, 20]
         self.FINGER_PIPS = [2, 6, 10, 14, 18]  # Finger base joints (for comparison)
         
+        # Hand connections for drawing (21 landmarks connected)
+        self.HAND_CONNECTIONS = [
+            (0, 1), (1, 2), (2, 3), (3, 4),  # Thumb
+            (0, 5), (5, 6), (6, 7), (7, 8),  # Index
+            (0, 9), (9, 10), (10, 11), (11, 12),  # Middle
+            (0, 13), (13, 14), (14, 15), (15, 16),  # Ring
+            (0, 17), (17, 18), (18, 19), (19, 20),  # Pinky
+            (5, 9), (9, 13), (13, 17)  # Palm
+        ]
+        
     def detect_hand(self, frame: np.ndarray) -> Tuple[List, Optional[np.ndarray]]:
         """
-        Detect hand(s) using MediaPipe.
+        Detect hand(s) using MediaPipe Tasks API.
         
         Args:
             frame: BGR image from camera
@@ -153,26 +170,35 @@ class HandTracker:
         # Convert BGR to RGB for MediaPipe
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        # Process frame with MediaPipe
-        results = self.hands.process(rgb_frame)
+        # Create MediaPipe Image
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        
+        # Process frame with MediaPipe HandLandmarker
+        results = self.hand_landmarker.detect(mp_image)
         
         # Create visualization frame
         vis_frame = frame.copy()
         
         hand_landmarks_list = []
         
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
+        if results.hand_landmarks:
+            for hand_landmarks in results.hand_landmarks:
                 hand_landmarks_list.append(hand_landmarks)
                 
-                # Draw hand landmarks on visualization
-                self.mp_drawing.draw_landmarks(
-                    vis_frame,
-                    hand_landmarks,
-                    self.mp_hands.HAND_CONNECTIONS,
-                    self.mp_drawing_styles.get_default_hand_landmarks_style(),
-                    self.mp_drawing_styles.get_default_hand_connections_style()
-                )
+                # Draw hand landmarks manually
+                h, w = frame.shape[:2]
+                landmark_points = []
+                for lm in hand_landmarks:
+                    x, y = int(lm.x * w), int(lm.y * h)
+                    landmark_points.append((x, y))
+                    cv2.circle(vis_frame, (x, y), 5, (0, 255, 0), -1)
+                
+                # Draw connections
+                for connection in self.HAND_CONNECTIONS:
+                    start_idx, end_idx = connection
+                    if start_idx < len(landmark_points) and end_idx < len(landmark_points):
+                        cv2.line(vis_frame, landmark_points[start_idx], 
+                                landmark_points[end_idx], (255, 255, 255), 2)
         
         return hand_landmarks_list, vis_frame
     
@@ -181,7 +207,7 @@ class HandTracker:
         Count extended fingers using MediaPipe landmarks.
         
         Args:
-            hand_landmarks: MediaPipe hand landmarks
+            hand_landmarks: MediaPipe hand landmarks (list of NormalizedLandmark)
             frame_shape: (height, width) of frame
             
         Returns:
@@ -190,9 +216,9 @@ class HandTracker:
         h, w = frame_shape
         finger_count = 0
         
-        # Get all landmark coordinates
+        # Get all landmark coordinates (Tasks API returns list directly)
         landmarks = []
-        for lm in hand_landmarks.landmark:
+        for lm in hand_landmarks:
             landmarks.append((int(lm.x * w), int(lm.y * h)))
         
         # Check thumb (different logic - compare x-coordinate)
@@ -256,9 +282,9 @@ class HandTracker:
         
         for idx, hand_landmarks in enumerate(hand_landmarks_list):
             if idx < len(finger_counts):
-                # Get wrist position for text
+                # Get wrist position for text (Tasks API: direct list access)
                 h, w = frame.shape[:2]
-                wrist = hand_landmarks.landmark[0]
+                wrist = hand_landmarks[0]
                 wrist_x = int(wrist.x * w)
                 wrist_y = int(wrist.y * h)
                 
@@ -269,7 +295,7 @@ class HandTracker:
     
     def cleanup(self):
         """Cleanup MediaPipe resources."""
-        self.hands.close()
+        self.hand_landmarker.close()
 
 
 # ============================================================================
