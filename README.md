@@ -1,375 +1,197 @@
-# MNIST Handwritten Digit Recognition with Real-Time Finger Counting
+# Gideon - AI Finger Recognition System
 
-![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white)
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
-![OpenCV](https://img.shields.io/badge/opencv-%23white.svg?style=for-the-badge&logo=opencv&logoColor=white)
+![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg?style=for-the-badge&logo=swift&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.9+-blue.svg?style=for-the-badge&logo=python&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-14+-black.svg?style=for-the-badge&logo=apple&logoColor=white)
+![MediaPipe](https://img.shields.io/badge/MediaPipe-Hands-green.svg?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)
-![Model Accuracy](https://img.shields.io/badge/accuracy-99.30%25-brightgreen.svg?style=for-the-badge)
 
-## 🎯 Overview
+## Overview
 
-This project combines **computer vision** and **deep learning** to create an interactive finger counting system that validates itself using a trained MNIST model. The system:
+**Gideon** is a professional finger counting system that uses AI and computer vision to detect and count fingers in real-time. The project includes:
 
-1. **Trains a CNN** on the MNIST dataset (99.30% accuracy)
-2. **Detects your hand** using OpenCV computer vision
-3. **Counts your fingers** using convexity defects analysis
-4. **Renders the count** as an MNIST-style digit
-5. **Validates the count** by passing it through the trained CNN model
+- **GideonMac** - Native macOS app built with Swift and Vision framework
+- **Python Live Demo** - MediaPipe-based hand tracking with MNIST verification
 
-This creates a fascinating **self-validating system** where the AI model checks the accuracy of the computer vision finger counting!
+Both versions support **two-hand tracking** (count up to 10 fingers) with temporal smoothing for stable results.
 
-## 🚀 Quick Start
+## Features
 
-### 1. Install Dependencies
+- 🖐️ **Real-time finger counting** - Instant detection with 30+ FPS
+- ✌️ **Two-hand support** - Count fingers from both hands simultaneously  
+- 📷 **Un-mirrored camera** - Natural view (right hand on right side)
+- 🧠 **MNIST verification** - AI validates the finger count
+- 🎨 **Modern UI** - Clean, professional interface
+- 🔄 **Temporal smoothing** - Stable counts using mode of recent frames
 
-```bash
-pip install -r requirements.txt
-```
+## Quick Start
 
-This installs:
-- `torch` - PyTorch deep learning framework
-- `torchvision` - Computer vision utilities and datasets
-- `opencv-python` - Real-time computer vision library
-
-### 2. Train the Model
-
-Open and run **`train.ipynb`** in Jupyter Notebook or Google Colab. This notebook:
-
-- Downloads the MNIST dataset automatically (60,000 training images, 10,000 test images)
-- Trains a CNN model for 10 epochs
-- Achieves 99.30% accuracy on the test set
-- Saves the trained model as `mnist_cnn.pt`
-
-**Training takes about 2-5 minutes on GPU, 10-20 minutes on CPU.**
-
-### 3. Run the Live Demo
+### Python Version (Recommended for Testing)
 
 ```bash
+# Install dependencies
+pip install torch torchvision opencv-python mediapipe
+
+# Download hand landmarker model
+curl -O https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+
+# Run live demo
 python live.py
 ```
 
-**What happens:**
-- Your webcam starts
-- Show your hand below the yellow line (hand detection zone)
-- The system counts your fingers in real-time
-- It renders your finger count as a digit
-- The MNIST model predicts what digit it sees
-- You can see if the CV system and AI model agree!
+**Controls:**
+- **Q** / **ESC** - Quit
+- **H** - Toggle hand visualization
+- **D** - Toggle digit preview
 
-### Controls:
-- **Q** or **ESC** - Quit
-- **H** - Toggle hand contour visualization
-- **D** - Toggle digit preview window
+### macOS App (GideonMac)
 
-## 📊 Performance Metrics
+```bash
+cd GideonMac
 
-Our trained model achieves exceptional accuracy with rapid convergence:
-
-| Epoch | Train Loss | Test Accuracy | Notes |
-|-------|-----------|---------------|-------|
-| 1/10  | 0.1952    | 98.59%       | Strong initial performance |
-| 2/10  | 0.0574    | 98.87%       | Rapid improvement |
-| 3/10  | 0.0405    | 98.98%       | Approaching 99% |
-| 4/10  | 0.0318    | 99.06%       | Breaks 99% barrier |
-| 5/10  | 0.0243    | 99.09%       | Continuing to improve |
-| 6/10  | 0.0211    | 99.02%       | Minor fluctuation |
-| 7/10  | 0.0185    | 99.27%       | Strong gains |
-| **8/10**  | **0.0162**    | **99.30%** ⭐    | **Best performance** |
-| 9/10  | 0.0135    | 99.27%       | Slight decrease |
-| 10/10 | 0.0113    | 99.26%       | Final epoch |
-
-**Key Observations:**
-- Training loss decreases consistently from 0.1952 → 0.0113
-- Test accuracy plateaus around 99.3%, indicating optimal model capacity
-- Minimal overfitting (small gap between train and test performance)
-- Best model saved at epoch 8
-
-## 🏗️ Project Architecture
-
-### Files in This Repository
-
-```
-mnist-digit-recognition/
-├── train.ipynb          # Jupyter notebook for training the CNN
-├── live.py              # Real-time finger counting application
-├── requirements.txt     # Python dependencies
-├── mnist_cnn.pt        # Trained model weights (generated after training)
-└── README.md           # This file
+# Build and run
+./build_app.sh
+open Gideon.app
 ```
 
-### `train.ipynb` - Model Training Notebook
+**Requirements:** macOS 14+, Xcode Command Line Tools
 
-**What it does:**
-- Loads MNIST dataset (28×28 grayscale digit images)
-- Defines a CNN architecture with 2 conv layers and 2 fully connected layers
-- Trains for 10 epochs using Adam optimizer
-- Evaluates on test set after each epoch
-- Saves final model to `mnist_cnn.pt`
-
-**Architecture:**
-```
-Input (1×28×28)
-   ↓
-Conv2D(32 filters, 3×3) → ReLU → MaxPool(2×2)
-   ↓ (32×14×14)
-Conv2D(64 filters, 3×3) → ReLU → MaxPool(2×2)
-   ↓ (64×7×7)
-Flatten → Dense(3136→128) → ReLU → Dropout(0.2)
-   ↓
-Dense(128→10) → Softmax
-   ↓
-Output (10 classes)
-```
-
-**Model Parameters:** ~1.2M trainable parameters
-
-### `live.py` - Real-Time Application
-
-**What it does:**
-This is a complete computer vision application with multiple sophisticated components:
-
-#### 1. **Hand Detection (OpenCV Skin Segmentation)**
-- Converts camera frame to HSV color space
-- Applies skin color thresholding to isolate hand
-- Uses morphological operations to clean up noise
-- Finds hand contours and filters by size/shape
-- Excludes face region (top 25% of frame)
-
-#### 2. **Finger Counting (Convexity Defects Algorithm)**
-- Calculates convex hull around hand contour
-- Finds convexity defects (gaps between fingers)
-- Analyzes defect depth and angle
-- Counts valid defects where depth > threshold and angle < 90°
-- Formula: `fingers = defects + 1` (since N fingers have N-1 gaps)
-- Applies temporal smoothing using mode of last 7 frames
-
-#### 3. **Digit Rendering**
-- Renders the finger count as a digit using OpenCV text
-- Creates 28×28 grayscale image matching MNIST format
-- Applies same normalization as training data (mean=0.1307, std=0.3081)
-
-#### 4. **MNIST Prediction**
-- Loads trained CNN model from `mnist_cnn.pt`
-- Preprocesses rendered digit
-- Runs inference to predict the digit
-- Returns prediction and confidence score
-
-#### 5. **Professional UI**
-The application displays:
-- **Main window:** Live camera feed with hand detection overlay
-- **Hand Mask window:** Binary mask showing skin detection
-- **Info panel:** FPS, finger count, model prediction, confidence
-- **Digit preview:** Shows the rendered digit and model output
-- **Match indicator:** Green if CV count matches AI prediction, red otherwise
-
-**Performance:**
-- Runs at 30+ FPS on most systems
-- GPU acceleration supported (CUDA)
-- Smooth finger counting with temporal filtering
-
-## 🎓 How It Works: The Complete Pipeline
-
-### Step-by-Step Flow
-
-1. **Camera Capture**
-   - Reads frame from webcam (1280×720)
-   - Flips horizontally for natural interaction
-
-2. **Hand Detection**
-   - Converts BGR → HSV color space
-   - Applies skin color mask (HSV range: H=0-20, S=20-255, V=70-255)
-   - Cleans mask with morphological operations
-   - Finds contours and filters by area (>10,000 pixels)
-   - Excludes top 25% of frame to avoid face detection
-
-3. **Finger Counting**
-   - Computes convex hull of hand contour
-   - Calculates convexity defects using `cv2.convexityDefects()`
-   - Filters defects by:
-     - Depth > 10,000 (deep gap between fingers)
-     - Angle < 90° (acute angle at fingertip valleys)
-   - Counts valid defects and adds 1 to get finger count
-   - Smooths count using mode of last 7 frames
-
-4. **Digit Rendering**
-   - Renders count as white text on black background
-   - Resizes to 28×28 pixels
-   - Normalizes: `(pixel/255 - 0.1307) / 0.3081`
-   - Converts to PyTorch tensor
-
-5. **CNN Prediction**
-   - Passes tensor through trained model
-   - Applies softmax to get probabilities
-   - Extracts prediction (argmax) and confidence (max probability)
-
-6. **Visualization**
-   - Draws hand contour and convex hull
-   - Marks convexity defect points
-   - Displays rendered digit in preview window
-   - Shows prediction, confidence, and match status
-   - Updates UI at 30+ FPS
-
-## 🔬 Technical Deep Dive
-
-### Why Convexity Defects for Finger Counting?
-
-Traditional methods (like counting contour vertices) fail because:
-- Noisy contours have many false vertices
-- Lighting changes affect edge detection
-- Requires heavy preprocessing
-
-**Convexity defects are superior because:**
-- Based on geometric properties (convex hull)
-- Robust to noise and lighting
-- Gaps between fingers create deep, consistent defects
-- Mathematical foundation: detects concave regions
-
-**The Math:**
-- Convex hull = smallest convex polygon containing hand
-- Defects = regions where hull deviates from contour
-- Deep defects with acute angles = gaps between extended fingers
-
-### MNIST Normalization
-
-The model expects normalized inputs matching training distribution:
+## Project Structure
 
 ```
-normalized_pixel = (pixel_value / 255.0 - 0.1307) / 0.3081
+gideon/
+├── live.py                    # Python live demo (MediaPipe + MNIST)
+├── train.ipynb                # Train MNIST model
+├── mnist_cnn.pt               # Trained MNIST weights
+├── hand_landmarker.task       # MediaPipe hand model
+├── convert_to_coreml.py       # Convert PyTorch → CoreML
+├── requirements.txt           # Python dependencies
+│
+└── GideonMac/                 # Native macOS app
+    ├── Sources/GideonMac/
+    │   ├── CameraManager.swift      # Camera + Vision hand pose
+    │   ├── ContentView.swift        # SwiftUI interface
+    │   ├── RecognitionService.swift # CoreML MNIST inference
+    │   └── DigitRenderer.swift      # Render digits for MNIST
+    ├── MNIST_CNN.mlpackage    # CoreML model
+    ├── build_app.sh           # Build script
+    └── Package.swift          # Swift package manifest
 ```
 
-Where:
-- `0.1307` = mean pixel value in MNIST training set
-- `0.3081` = standard deviation of MNIST training set
+## How It Works
 
-This centers data around 0 with unit variance, improving training stability.
+### Finger Counting Logic
 
-### Model Architecture Choices
+Both Python and Swift versions use the same algorithm:
 
-**Why 2 Conv Layers?**
-- First layer: detects basic edges and strokes
-- Second layer: combines edges into digit features
-- More layers add minimal benefit for MNIST (too simple)
-
-**Why Dropout?**
-- Prevents overfitting by randomly dropping neurons during training
-- 20% dropout rate balances regularization vs. capacity
-- Only active during training, disabled during inference
-
-**Why Adam Optimizer?**
-- Adaptive learning rates per parameter
-- Combines benefits of RMSprop and momentum
-- Requires minimal hyperparameter tuning
-
-## 🎮 Usage Tips
-
-### For Best Results:
-
-1. **Lighting:** Use good, even lighting. Avoid backlighting.
-2. **Background:** Plain, non-skin-colored backgrounds work best
-3. **Hand Position:** Keep hand below the yellow detection line
-4. **Distance:** Position hand 1-2 feet from camera
-5. **Spread Fingers:** Keep fingers clearly separated for accurate counting
-
-### Common Issues:
-
-**Problem:** Hand not detected
-- **Solution:** Adjust lighting, move hand into detection zone (below yellow line)
-
-**Problem:** Wrong finger count
-- **Solution:** Spread fingers wider, ensure clear background, wait for smoothing (7 frames)
-
-**Problem:** Model prediction doesn't match count
-- **Solution:** This is expected sometimes! The digit renderer might create ambiguous digits (e.g., poorly formed 3 vs 8)
-
-**Problem:** Face detected as hand
-- **Solution:** Keep face above the yellow line, or adjust `SKIN_LOWER_HSV` values in code
-
-## 🛠️ Customization
-
-### Adjust Hand Detection Sensitivity
-
-In `live.py`, modify these values in the `Config` class:
-
+**Thumb:** Extended if tip X-distance from wrist > base X-distance from wrist
 ```python
-# More sensitive skin detection (detects more skin tones)
-SKIN_LOWER_HSV = np.array([0, 15, 60], dtype=np.uint8)
-SKIN_UPPER_HSV = np.array([25, 255, 255], dtype=np.uint8)
-
-# Less sensitive (only very saturated skin tones)
-SKIN_LOWER_HSV = np.array([0, 30, 80], dtype=np.uint8)
-SKIN_UPPER_HSV = np.array([18, 255, 255], dtype=np.uint8)
+thumb_extended = abs(thumb_tip.x - wrist.x) > abs(thumb_base.x - wrist.x)
 ```
 
-### Change Finger Counting Parameters
-
+**Other 4 Fingers:** Extended if tip is above PIP joint (Y-axis)
 ```python
-# More sensitive finger detection (may count more fingers)
-DEFECT_DEPTH_THRESHOLD = 8000
-
-# Less sensitive (stricter, may miss fingers)
-DEFECT_DEPTH_THRESHOLD = 12000
+finger_extended = tip.y < pip.y  # In image coords, lower Y = higher position
 ```
 
-### Retrain Model with Different Parameters
+### Pipeline
 
-In `train.ipynb`, experiment with:
-- `BATCH = 64` (smaller batches for less memory)
-- `EPOCHS = 15` (more training iterations)
-- `lr=0.0005` (lower learning rate for finer optimization)
-- Add data augmentation (rotations, shifts)
+1. **Camera Capture** → RGB frame from webcam
+2. **Hand Detection** → MediaPipe/Vision detects hand landmarks
+3. **Finger Counting** → Apply extension logic to each finger
+4. **Temporal Smoothing** → Mode of last 7 frames
+5. **MNIST Verification** → Render digit → CNN predicts → Compare
 
-## 📈 Future Improvements
+## Training the MNIST Model
 
-### Potential Enhancements:
+```bash
+# Run the training notebook
+jupyter notebook train.ipynb
+```
 
-- [ ] **Better digit rendering** - Use font that closer matches MNIST handwriting
-- [ ] **Gesture recognition** - Detect hand gestures beyond counting
-- [ ] **Two-hand support** - Count fingers on both hands simultaneously
-- [ ] **Distance normalization** - Account for hand distance from camera
-- [ ] **Mobile deployment** - Port to iOS/Android using PyTorch Mobile
-- [ ] **Web version** - Use TensorFlow.js for browser-based demo
-- [ ] **Training visualization** - Add live plotting in training notebook
-- [ ] **Model ensemble** - Combine multiple models for higher accuracy
+Or train directly:
+```bash
+python -c "
+import torch
+from torchvision import datasets, transforms
+from torch import nn, optim
 
-### Known Limitations:
+# Load MNIST
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+train = datasets.MNIST('.', train=True, download=True, transform=transform)
+test = datasets.MNIST('.', train=False, transform=transform)
 
-- **Lighting dependency** - Performance degrades in poor lighting
-- **Skin tone variation** - HSV thresholds may need adjustment for different skin tones
-- **Digit ambiguity** - Rendered digits don't perfectly match handwritten MNIST style
-- **Background interference** - Skin-colored backgrounds cause false detections
-- **Single-hand focus** - Best results with one hand at a time
+# Simple CNN
+model = nn.Sequential(
+    nn.Conv2d(1, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+    nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+    nn.Flatten(), nn.Linear(64*7*7, 128), nn.ReLU(), nn.Dropout(0.2), nn.Linear(128, 10)
+)
 
-## 🤝 Contributing
+# Train
+for epoch in range(10):
+    for x, y in torch.utils.data.DataLoader(train, batch_size=128, shuffle=True):
+        loss = nn.CrossEntropyLoss()(model(x), y)
+        loss.backward()
+        optim.Adam(model.parameters()).step()
+        optim.Adam(model.parameters()).zero_grad()
 
-Contributions welcome! Areas for improvement:
+torch.save(model.state_dict(), 'mnist_cnn.pt')
+"
+```
 
-1. **Better skin detection** - Explore ML-based skin segmentation
-2. **Hand pose estimation** - Use MediaPipe or OpenPose for more robust tracking
-3. **Model improvements** - Experiment with different architectures
-4. **UI enhancements** - Add settings panel, calibration wizard
-5. **Documentation** - Add video demos, troubleshooting guides
+## Converting to CoreML
 
-## 📄 License
+```bash
+python convert_to_coreml.py
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This creates `MNIST_CNN.mlpackage` for use in the macOS app.
 
-## 🙏 Acknowledgments
+## Performance
 
-- **MNIST Dataset** - Yann LeCun, Corinna Cortes, Christopher J.C. Burges
-- **PyTorch** - Facebook AI Research
-- **OpenCV** - Open Source Computer Vision Library
+| Metric | Python | Swift |
+|--------|--------|-------|
+| FPS | 30+ | 30+ |
+| Max Hands | 2 | 2 |
+| Max Fingers | 10 | 10 |
+| Smoothing | 7 frames | 5 frames |
+| Accuracy | ~99% | ~99% |
 
-## 📞 Support
+## Requirements
 
-Having issues? Check:
-1. Python version (3.8+)
-2. All dependencies installed (`pip install -r requirements.txt`)
-3. Webcam permissions granted
-4. Model file (`mnist_cnn.pt`) exists after training
-5. Good lighting and clear background
+### Python
+- Python 3.9+
+- PyTorch
+- OpenCV
+- MediaPipe
+- NumPy
 
-For bugs or questions, open an issue on GitHub.
+### macOS
+- macOS 14 Sonoma+
+- Swift 5.9+
+- Vision framework (built-in)
+- CoreML (built-in)
+
+## Tips for Best Results
+
+1. **Good lighting** - Even, front-facing light works best
+2. **Plain background** - Avoid busy or skin-toned backgrounds
+3. **Spread fingers** - Keep fingers clearly separated
+4. **Camera distance** - Position hand 1-2 feet from camera
+5. **Wait for smoothing** - Hold gesture for ~0.5s for stable count
+
+## License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- [MediaPipe](https://mediapipe.dev/) - Google's hand tracking solution
+- [MNIST](http://yann.lecun.com/exdb/mnist/) - LeCun, Cortes, Burges
+- [PyTorch](https://pytorch.org/) - Deep learning framework
+- [Apple Vision](https://developer.apple.com/documentation/vision) - Hand pose estimation
 
 ---
 
-**Made with ❤️ using PyTorch and OpenCV**
+**Made with ❤️ for human-computer interaction research**
